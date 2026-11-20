@@ -101,15 +101,19 @@ async function adminCreateCoupon(req, res) {
   }
 }
 
-// PUT /api/admin/coupons/:id -> Admin updates coupon
+// PUT/PATCH /api/admin/coupons/:id -> Admin updates coupon
 async function adminUpdateCoupon(req, res) {
   try {
     const { id } = req.params;
-    await Coupon.update(id, req.body);
-    return res.json({ message: "Coupon updated successfully." });
+    if (!id) {
+      return res.status(400).json({ error: "Coupon ID is required." });
+    }
+    const updated = await Coupon.update(id, req.body || {});
+    return res.json({ message: "Coupon updated successfully.", coupon: updated });
   } catch (err) {
     console.error("adminUpdateCoupon error:", err);
-    res.status(500).json({ error: "Failed to update coupon." });
+    const status = err.statusCode || 500;
+    res.status(status).json({ error: err.message || "Failed to update coupon." });
   }
 }
 

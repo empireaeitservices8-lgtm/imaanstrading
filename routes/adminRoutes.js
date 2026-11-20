@@ -57,6 +57,7 @@ router.delete("/orders/:id", deleteOrder);
 router.get("/coupons", couponController.adminGetCoupons);
 router.post("/coupons", couponController.adminCreateCoupon);
 router.put("/coupons/:id", couponController.adminUpdateCoupon);
+router.patch("/coupons/:id", couponController.adminUpdateCoupon);
 router.delete("/coupons/:id", couponController.adminDeleteCoupon);
 
 // Review management

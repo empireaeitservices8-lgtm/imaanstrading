@@ -12,6 +12,16 @@ const Coupon = {
     return rows.length > 0 ? rows[0] : null;
   },
 
+  async findById(id) {
+    if (!id) return null;
+    const pool = getPool();
+    const [rows] = await pool.query(
+      "SELECT * FROM `coupons` WHERE `id` = ? LIMIT 1",
+      [id]
+    );
+    return rows.length > 0 ? rows[0] : null;
+  },
+
   async findAll() {
     const pool = getPool();
     const [rows] = await pool.query(
@@ -133,6 +143,29 @@ const Coupon = {
   async create(data) {
     const pool = getPool();
     const code = String(data.code || "").trim().toUpperCase();
+    const rawMax = data.maxDiscount !== undefined
+      ? data.maxDiscount
+      : data.max_discount !== undefined
+        ? data.max_discount
+        : data.maxDiscountAmount;
+    const maxDiscount = rawMax ? Number(rawMax) : null;
+
+    let isActive = 1;
+    if (data.isActive !== undefined) {
+      isActive = (data.isActive === true || data.isActive === 1 || data.isActive === "1" || data.isActive === "active") ? 1 : 0;
+    } else if (data.is_active !== undefined) {
+      isActive = (data.is_active === true || data.is_active === 1 || data.is_active === "1" || data.is_active === "active") ? 1 : 0;
+    } else if (data.status !== undefined) {
+      isActive = (data.status === "active" || data.status === true || data.status === 1 || data.status === "1") ? 1 : 0;
+    }
+
+    let expiresAt = null;
+    const rawExpires = data.expiresAt !== undefined ? data.expiresAt : data.expires_at;
+    if (rawExpires) {
+      const d = new Date(rawExpires);
+      expiresAt = isNaN(d.getTime()) ? null : d;
+    }
+
     const [res] = await pool.query(
       `INSERT INTO \`coupons\` (\`code\`, \`description\`, \`discount_type\`, \`discount_value\`, \`min_order_value\`, \`max_discount\`, \`free_shipping\`, \`usage_limit\`, \`per_user_limit\`, \`expires_at\`, \`is_active\`)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -142,12 +175,12 @@ const Coupon = {
         data.discountType === "flat" ? "flat" : "percentage",
         Number(data.discountValue || 0),
         Number(data.minOrderValue || 0),
-        data.maxDiscount ? Number(data.maxDiscount) : null,
+        maxDiscount,
         data.freeShipping ? 1 : 0,
         data.usageLimit ? Number(data.usageLimit) : null,
         Number(data.perUserLimit || 1),
-        data.expiresAt ? new Date(data.expiresAt) : null,
-        data.isActive === false ? 0 : 1,
+        expiresAt,
+        isActive,
       ]
     );
     return res.insertId;
@@ -155,29 +188,70 @@ const Coupon = {
 
   async update(id, data) {
     const pool = getPool();
-    const existing = await pool.query("SELECT * FROM `coupons` WHERE `id` = ? LIMIT 1", [id]);
-    const current = existing[0]?.[0] || {};
+    const [rows] = await pool.query("SELECT * FROM `coupons` WHERE `id` = ? LIMIT 1", [id]);
+    if (!rows || rows.length === 0) {
+      const err = new Error(`Coupon with ID "${id}" not found.`);
+      err.statusCode = 404;
+      throw err;
+    }
+    const current = rows[0];
 
+    const code = data.code !== undefined ? String(data.code).trim().toUpperCase() : current.code;
     const description = data.description !== undefined ? String(data.description || "").trim() : (current.description || "");
     const discountType = (data.discountType || data.discount_type || current.discount_type) === "flat" ? "flat" : "percentage";
-    const discountValue = data.discountValue !== undefined ? Number(data.discountValue) : (data.discount_value !== undefined ? Number(data.discount_value) : Number(current.discount_value || 0));
-    const minOrderValue = data.minOrderValue !== undefined ? Number(data.minOrderValue) : (data.min_order_value !== undefined ? Number(data.min_order_value) : Number(current.min_order_value || 0));
-    const maxDiscount = data.maxDiscount !== undefined ? (data.maxDiscount ? Number(data.maxDiscount) : null) : (data.max_discount !== undefined ? (data.max_discount ? Number(data.max_discount) : null) : current.max_discount);
-    const freeShipping = data.freeShipping !== undefined ? (data.freeShipping ? 1 : 0) : (data.free_shipping !== undefined ? (data.free_shipping ? 1 : 0) : (current.free_shipping ? 1 : 0));
-    const usageLimit = data.usageLimit !== undefined ? (data.usageLimit ? Number(data.usageLimit) : null) : (data.usage_limit !== undefined ? (data.usage_limit ? Number(data.usage_limit) : null) : current.usage_limit);
-    const perUserLimit = data.perUserLimit !== undefined ? Number(data.perUserLimit) : (data.per_user_limit !== undefined ? Number(data.per_user_limit) : Number(current.per_user_limit || 1));
-    const expiresAt = data.expiresAt !== undefined ? (data.expiresAt ? new Date(data.expiresAt) : null) : (data.expires_at !== undefined ? (data.expires_at ? new Date(data.expires_at) : null) : current.expires_at);
+    const rawDiscount = data.discountValue !== undefined ? data.discountValue : data.discount_value;
+    const discountValue = rawDiscount !== undefined ? Number(rawDiscount) : Number(current.discount_value || 0);
+    const rawMinOrder = data.minOrderValue !== undefined ? data.minOrderValue : data.min_order_value;
+    const minOrderValue = rawMinOrder !== undefined ? Number(rawMinOrder) : Number(current.min_order_value || 0);
     
-    // Support boolean true/false, integer 1/0, or string
+    const rawMax = data.maxDiscount !== undefined 
+      ? data.maxDiscount 
+      : data.max_discount !== undefined 
+        ? data.max_discount 
+        : data.maxDiscountAmount;
+    const maxDiscount = rawMax !== undefined 
+      ? (rawMax ? Number(rawMax) : null) 
+      : current.max_discount;
+
+    const rawShipping = data.freeShipping !== undefined ? data.freeShipping : data.free_shipping;
+    const freeShipping = rawShipping !== undefined 
+      ? (rawShipping ? 1 : 0) 
+      : (current.free_shipping ? 1 : 0);
+
+    const rawUsage = data.usageLimit !== undefined ? data.usageLimit : data.usage_limit;
+    const usageLimit = rawUsage !== undefined 
+      ? (rawUsage ? Number(rawUsage) : null) 
+      : current.usage_limit;
+
+    const rawPerUser = data.perUserLimit !== undefined ? data.perUserLimit : data.per_user_limit;
+    const perUserLimit = rawPerUser !== undefined 
+      ? Number(rawPerUser) 
+      : Number(current.per_user_limit || 1);
+
+    let expiresAt = current.expires_at;
+    const rawExpires = data.expiresAt !== undefined ? data.expiresAt : data.expires_at;
+    if (rawExpires !== undefined) {
+      if (!rawExpires) {
+        expiresAt = null;
+      } else {
+        const d = new Date(rawExpires);
+        expiresAt = isNaN(d.getTime()) ? null : d;
+      }
+    }
+
+    // Support boolean true/false, integer 1/0, string '1'/'0', or string 'active'/'inactive'/'disabled'
     let isActive = current.is_active ? 1 : 0;
     if (data.isActive !== undefined) {
-      isActive = data.isActive === true || data.isActive === 1 || data.isActive === "1" ? 1 : 0;
+      isActive = (data.isActive === true || data.isActive === 1 || data.isActive === "1" || data.isActive === "active") ? 1 : 0;
     } else if (data.is_active !== undefined) {
-      isActive = data.is_active === true || data.is_active === 1 || data.is_active === "1" ? 1 : 0;
+      isActive = (data.is_active === true || data.is_active === 1 || data.is_active === "1" || data.is_active === "active") ? 1 : 0;
+    } else if (data.status !== undefined) {
+      isActive = (data.status === "active" || data.status === true || data.status === 1 || data.status === "1") ? 1 : 0;
     }
 
     await pool.query(
       `UPDATE \`coupons\` SET
+        \`code\` = ?,
         \`description\` = ?,
         \`discount_type\` = ?,
         \`discount_value\` = ?,
@@ -190,6 +264,7 @@ const Coupon = {
         \`is_active\` = ?
        WHERE \`id\` = ?`,
       [
+        code,
         description,
         discountType,
         discountValue,
@@ -203,6 +278,9 @@ const Coupon = {
         id,
       ]
     );
+
+    const [updatedRows] = await pool.query("SELECT * FROM `coupons` WHERE `id` = ? LIMIT 1", [id]);
+    return updatedRows[0] || null;
   },
 
   async delete(id) {
