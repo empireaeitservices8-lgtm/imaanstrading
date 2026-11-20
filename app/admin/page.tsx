@@ -1482,12 +1482,16 @@ export default function AdminPage() {
     discountValue: number;
     minOrderValue: number;
     maxDiscountAmount?: number;
+    freeShipping?: boolean;
     isActive: boolean;
     usageLimit?: number;
+    perUserLimit?: number;
     timesUsed: number;
     description?: string;
+    expiresAt?: string | null;
   }
   const [coupons, setCoupons] = useState<AdminCoupon[]>([]);
+  const [updatingCouponIds, setUpdatingCouponIds] = useState<Record<number, boolean>>({});
   const [newCoupon, setNewCoupon] = useState({
     code: "",
     discountType: "percentage" as "percentage" | "flat",
@@ -1633,6 +1637,55 @@ export default function AdminPage() {
       }
     } catch {}
   }, []);
+
+  const handleToggleCouponStatus = async (c: AdminCoupon) => {
+    if (updatingCouponIds[c.id]) return;
+
+    const previousActive = Boolean(c.isActive);
+    const nextActive = !previousActive;
+
+    // Prevent multiple clicks while an update is processing
+    setUpdatingCouponIds((prev) => ({ ...prev, [c.id]: true }));
+
+    // Optimistic UI update
+    setCoupons((prev) =>
+      prev.map((item) => (item.id === c.id ? { ...item, isActive: nextActive } : item))
+    );
+
+    try {
+      const res = await fetch(`/api/admin/coupons/${c.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          isActive: nextActive,
+          is_active: nextActive ? 1 : 0,
+          status: nextActive ? "active" : "inactive",
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || `Failed to update status for coupon "${c.code}".`);
+      }
+
+      showNotice(`Coupon "${c.code}" is now ${nextActive ? "Active" : "Disabled"}.`);
+    } catch (err: unknown) {
+      // If an API request fails, revert the toggle to its previous state
+      setCoupons((prev) =>
+        prev.map((item) => (item.id === c.id ? { ...item, isActive: previousActive } : item))
+      );
+      const errMsg = err instanceof Error ? err.message : "Failed to update coupon status.";
+      setError(errMsg);
+      setTimeout(() => setError(""), 6000);
+    } finally {
+      setUpdatingCouponIds((prev) => {
+        const next = { ...prev };
+        delete next[c.id];
+        return next;
+      });
+    }
+  };
 
   const loadReviews = useCallback(async () => {
     try {
@@ -5016,36 +5069,22 @@ export default function AdminPage() {
                       <td className="px-4 py-3">
                         <button
                           type="button"
-                          onClick={async () => {
-                            const newActive = !c.isActive;
-                            // Optimistic update
-                            setCoupons((prev) =>
-                              prev.map((item) => (item.id === c.id ? { ...item, isActive: newActive } : item))
-                            );
-                            const res = await fetch(`/api/admin/coupons/${c.id}`, {
-                              method: "PUT",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({
-                                ...c,
-                                isActive: newActive,
-                                is_active: newActive ? 1 : 0,
-                              }),
-                            });
-                            if (res.ok) {
-                              showNotice(`Coupon "${c.code}" is now ${newActive ? "Active" : "Disabled"}`);
-                              loadCoupons();
-                            } else {
-                              showNotice("Failed to update coupon status.");
-                              loadCoupons();
-                            }
-                          }}
-                          className={`cursor-pointer inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold transition shadow-xs hover:opacity-90 active:scale-95 ${
-                            c.isActive ? "bg-emerald-100 text-emerald-800 border border-emerald-300" : "bg-neutral-100 text-neutral-600 border border-neutral-300"
+                          role="switch"
+                          aria-checked={c.isActive}
+                          aria-label={`Toggle status for coupon ${c.code}`}
+                          disabled={Boolean(updatingCouponIds[c.id])}
+                          onClick={() => handleToggleCouponStatus(c)}
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#7A5A3C] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+                            c.isActive ? "bg-emerald-600" : "bg-neutral-300"
                           }`}
-                          title="Click to toggle Active / Disabled"
+                          title={c.isActive ? "Click to disable coupon" : "Click to enable coupon"}
                         >
-                          <span className={`h-2 w-2 rounded-full ${c.isActive ? "bg-emerald-500 animate-pulse" : "bg-neutral-400"}`} />
-                          {c.isActive ? "Active (Click to Disable)" : "Disabled (Click to Enable)"}
+                          <span
+                            aria-hidden="true"
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                              c.isActive ? "translate-x-5" : "translate-x-0"
+                            }`}
+                          />
                         </button>
                       </td>
                       <td className="px-4 py-3 text-right">
