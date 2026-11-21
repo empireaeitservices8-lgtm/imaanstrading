@@ -1,22 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { getBackendUrl } from "@/lib/backendConfig";
+import { verifyJwtHs256 } from "@/lib/serverAuth";
 
 export async function DELETE(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const params = await Promise.resolve(context?.params);
-    const id = params?.id;
-    if (!id) {
-      return NextResponse.json({ error: "Review ID is required." }, { status: 400 });
+    // 1. Next.js 15: params argument is a Promise; validate numeric id
+    const { id } = await context.params;
+    const numId = Number(id);
+    if (!id || isNaN(numId)) {
+      return NextResponse.json({ error: "Review ID must be a valid number." }, { status: 400 });
     }
 
+    // 2. Verify admin session
+    const cookieStore = await cookies();
+    const token = cookieStore.get("token")?.value;
+    const authHeader = request.headers.get("authorization") || "";
+    const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    const activeToken = token || bearerToken;
+
+    let isAdmin = false;
+    if (activeToken) {
+      const decoded = verifyJwtHs256(activeToken);
+      if (decoded && decoded.role === "admin") {
+        isAdmin = true;
+      }
+    }
+
+    const refreshToken = cookieStore.get("refreshToken")?.value;
+    if (!isAdmin && !refreshToken && !authHeader) {
+      return NextResponse.json({ error: "Unauthorized: Admin privileges required." }, { status: 401 });
+    }
+
+    // 3. Dispatch to backend API
     const backendBase = getBackendUrl();
     const cookieHeader = request.headers.get("cookie") || request.cookies.toString() || "";
-    const authHeader = request.headers.get("authorization") || "";
 
-    const res = await fetch(`${backendBase}/api/admin/reviews/${encodeURIComponent(id)}`, {
+    const res = await fetch(`${backendBase}/api/admin/reviews/${numId}`, {
       method: "DELETE",
       headers: {
         cookie: cookieHeader,
@@ -31,9 +54,14 @@ export async function DELETE(
         { status: res.status }
       );
     }
-    return NextResponse.json(data, { status: 200 });
+
+    // 4. Return success 200
+    return NextResponse.json(
+      { success: true, message: data.message || "Review deleted successfully." },
+      { status: 200 }
+    );
   } catch (err: unknown) {
-    console.error("DELETE /api/admin/reviews/[id] proxy error:", (err as Error)?.message || err);
+    console.error("DELETE /api/admin/reviews/[id] error:", (err as Error)?.message || err);
     return NextResponse.json(
       { error: (err as Error)?.message || "Failed to delete review" },
       { status: 500 }

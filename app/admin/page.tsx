@@ -1839,14 +1839,14 @@ export default function AdminPage() {
 
   const handleDeleteReview = async (rev: AdminReview) => {
     if (deletingReviewIds[rev.id]) return;
-    if (!confirm(`Delete review #${rev.id} permanently?`)) return;
+    // 1. Ask for confirmation
+    if (!confirm(`Are you sure you want to delete review #${rev.id}?`)) return;
 
-    // Prevent duplicate clicks & remove optimistically
+    // Prevent duplicate clicks while the API request processes
     setDeletingReviewIds((prev) => ({ ...prev, [rev.id]: true }));
-    const originalReviews = [...adminReviews];
-    setAdminReviews((prev) => prev.filter((item) => item.id !== rev.id));
 
     try {
+      // 2. Call the API and check response.ok
       const res = await fetch(`/api/admin/reviews/${rev.id}`, { method: "DELETE" });
       const data = await res.json().catch(() => ({}));
 
@@ -1854,10 +1854,11 @@ export default function AdminPage() {
         throw new Error(data.error || "Failed to delete review.");
       }
 
-      showNotice(`Review #${rev.id} permanently deleted.`);
+      // 3. Remove the review from the list only if the delete succeeded
+      setAdminReviews((prev) => prev.filter((item) => item.id !== rev.id));
+      showNotice(data.message || `Review #${rev.id} deleted successfully.`);
     } catch (err: unknown) {
-      // Revert optimistic removal on failure
-      setAdminReviews(originalReviews);
+      // 4. Show an error toast with the server's message if it failed
       const errMsg = err instanceof Error ? err.message : "Failed to delete review.";
       setError(errMsg);
       setTimeout(() => setError(""), 6000);
