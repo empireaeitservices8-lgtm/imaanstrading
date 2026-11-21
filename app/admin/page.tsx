@@ -1505,18 +1505,28 @@ export default function AdminPage() {
   // Reviews
   interface AdminReview {
     id: number;
-    productId: string;
-    productName: string;
+    productId?: string | number;
+    product_id?: string | number;
+    productName?: string;
+    product_name?: string;
     rating: number;
     title?: string;
-    reviewText: string;
-    userName: string;
-    userEmail: string;
-    isVerifiedBuyer: boolean;
-    isApproved: boolean;
-    createdAt: string;
+    reviewText?: string;
+    comment?: string;
+    userName?: string;
+    customer_name?: string;
+    userEmail?: string;
+    customer_email?: string;
+    isVerifiedBuyer?: boolean;
+    is_verified_purchase?: boolean;
+    isApproved?: boolean;
+    is_approved?: boolean;
+    createdAt?: string;
+    created_at?: string;
   }
   const [adminReviews, setAdminReviews] = useState<AdminReview[]>([]);
+  const [updatingReviewIds, setUpdatingReviewIds] = useState<Record<number, boolean>>({});
+  const [deletingReviewIds, setDeletingReviewIds] = useState<Record<number, boolean>>({});
 
   // Bulk Quotation Catalog Items
   interface AdminBulkProduct {
@@ -1689,10 +1699,43 @@ export default function AdminPage() {
 
   const loadReviews = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/reviews");
+      const res = await fetch("/api/admin/reviews", { cache: "no-store" });
       if (res.ok) {
         const d = await res.json();
-        setAdminReviews(d.reviews || []);
+        const rawList = Array.isArray(d.reviews) ? d.reviews : [];
+        const normalized = rawList.map((r: any) => {
+          const isApproved = r.isApproved !== undefined ? Boolean(r.isApproved) : Boolean(r.is_approved);
+          const isVerifiedBuyer = r.isVerifiedBuyer !== undefined ? Boolean(r.isVerifiedBuyer) : Boolean(r.is_verified_purchase);
+          const userName = r.userName || r.customer_name || "Customer";
+          const userEmail = r.userEmail || r.customer_email || "";
+          const productName = r.productName || r.product_name || (r.productId || r.product_id ? `Product #${r.productId || r.product_id}` : "Product");
+          const reviewText = r.reviewText || r.comment || "";
+          const title = r.title || "";
+          const createdAt = r.createdAt || r.created_at || new Date().toISOString();
+
+          return {
+            ...r,
+            id: Number(r.id),
+            productId: String(r.productId || r.product_id || ""),
+            productName,
+            product_name: productName,
+            rating: Number(r.rating) || 5,
+            title,
+            reviewText,
+            comment: reviewText,
+            userName,
+            customer_name: userName,
+            userEmail,
+            customer_email: userEmail,
+            isVerifiedBuyer,
+            is_verified_purchase: isVerifiedBuyer,
+            isApproved,
+            is_approved: isApproved,
+            createdAt,
+            created_at: createdAt,
+          };
+        });
+        setAdminReviews(normalized);
       }
     } catch {}
   }, []);
@@ -1741,6 +1784,90 @@ export default function AdminPage() {
   const showNotice = (text: string, href?: string, pageLabel?: string) => {
     setNotice({ text, href, pageLabel });
     setTimeout(() => setNotice(null), 6000);
+  };
+
+  const handleToggleReviewApproval = async (rev: AdminReview) => {
+    if (updatingReviewIds[rev.id]) return;
+
+    const previousApproved = Boolean(rev.isApproved);
+    const nextApproved = !previousApproved;
+
+    // Prevent duplicate clicks & update optimistically
+    setUpdatingReviewIds((prev) => ({ ...prev, [rev.id]: true }));
+    setAdminReviews((prev) =>
+      prev.map((item) =>
+        item.id === rev.id
+          ? { ...item, isApproved: nextApproved, is_approved: nextApproved }
+          : item
+      )
+    );
+
+    try {
+      const res = await fetch(`/api/admin/reviews/${rev.id}/approval`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isApproved: nextApproved, is_approved: nextApproved }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update review approval status.");
+      }
+
+      showNotice(`Review #${rev.id} is now ${nextApproved ? "Approved / Public" : "Pending Approval"}.`);
+    } catch (err: unknown) {
+      // Revert optimistic update on failure
+      setAdminReviews((prev) =>
+        prev.map((item) =>
+          item.id === rev.id
+            ? { ...item, isApproved: previousApproved, is_approved: previousApproved }
+            : item
+        )
+      );
+      const errMsg = err instanceof Error ? err.message : "Failed to update review status.";
+      setError(errMsg);
+      setTimeout(() => setError(""), 6000);
+    } finally {
+      setUpdatingReviewIds((prev) => {
+        const next = { ...prev };
+        delete next[rev.id];
+        return next;
+      });
+    }
+  };
+
+  const handleDeleteReview = async (rev: AdminReview) => {
+    if (deletingReviewIds[rev.id]) return;
+    if (!confirm(`Delete review #${rev.id} permanently?`)) return;
+
+    // Prevent duplicate clicks & remove optimistically
+    setDeletingReviewIds((prev) => ({ ...prev, [rev.id]: true }));
+    const originalReviews = [...adminReviews];
+    setAdminReviews((prev) => prev.filter((item) => item.id !== rev.id));
+
+    try {
+      const res = await fetch(`/api/admin/reviews/${rev.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to delete review.");
+      }
+
+      showNotice(`Review #${rev.id} permanently deleted.`);
+    } catch (err: unknown) {
+      // Revert optimistic removal on failure
+      setAdminReviews(originalReviews);
+      const errMsg = err instanceof Error ? err.message : "Failed to delete review.";
+      setError(errMsg);
+      setTimeout(() => setError(""), 6000);
+    } finally {
+      setDeletingReviewIds((prev) => {
+        const next = { ...prev };
+        delete next[rev.id];
+        return next;
+      });
+    }
   };
 
   const load = useCallback(async () => {
@@ -5130,69 +5257,81 @@ export default function AdminPage() {
               <p className="text-sm text-neutral-500 py-10 text-center">No reviews submitted yet.</p>
             ) : (
               <div className="space-y-3">
-                {adminReviews.map((rev) => (
-                  <div
-                    key={rev.id}
-                    className="flex flex-wrap items-start justify-between gap-4 rounded-xl border bg-white p-4 shadow-xs"
-                    style={{ borderColor: LINE }}
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <div className="flex text-amber-500">
-                          {Array.from({ length: 5 }).map((_, i) => (
-                            <Star
-                              key={i}
-                              size={13}
-                              className={i < rev.rating ? "fill-amber-400 text-amber-400" : "text-neutral-300"}
-                            />
-                          ))}
-                        </div>
-                        <span className="text-xs font-bold text-[#1F1A17]">{rev.productName}</span>
-                        {rev.isVerifiedBuyer && (
-                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                            Verified Buyer
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs font-semibold text-[#1F1A17]">{rev.title}</p>
-                      <p className="text-xs text-neutral-600 leading-relaxed">{rev.reviewText}</p>
-                      <p className="text-[11px] text-neutral-400">
-                        By {rev.userName} ({rev.userEmail}) · {new Date(rev.createdAt).toLocaleDateString("en-IN")}
-                      </p>
-                    </div>
+                {adminReviews.map((rev) => {
+                  const author = rev.userName || rev.customer_name || "Customer";
+                  const email = rev.userEmail || rev.customer_email;
+                  const prod = rev.productName || rev.product_name || (rev.productId || rev.product_id ? `Product #${rev.productId || rev.product_id}` : "Product");
+                  const comment = rev.reviewText || rev.comment || "";
+                  const isApproved = rev.isApproved !== undefined ? rev.isApproved : rev.is_approved;
+                  const isVerified = rev.isVerifiedBuyer !== undefined ? rev.isVerifiedBuyer : rev.is_verified_purchase;
+                  const d = rev.createdAt || rev.created_at ? new Date(rev.createdAt || rev.created_at || "") : null;
+                  const dateStr = d && !isNaN(d.getTime()) ? d.toLocaleDateString("en-IN") : "Recently";
+                  const isUpdating = Boolean(updatingReviewIds[rev.id]);
+                  const isDeleting = Boolean(deletingReviewIds[rev.id]);
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await fetch(`/api/admin/reviews/${rev.id}/approval`, {
-                            method: "PATCH",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ isApproved: !rev.isApproved }),
-                          });
-                          loadReviews();
-                        }}
-                        className={`cursor-pointer rounded-full px-3 py-1 text-xs font-bold ${
-                          rev.isApproved ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
-                        }`}
-                      >
-                        {rev.isApproved ? "Approved / Public" : "Pending Approval"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (confirm("Delete this review permanently?")) {
-                            await fetch(`/api/admin/reviews/${rev.id}`, { method: "DELETE" });
-                            loadReviews();
-                          }
-                        }}
-                        className="cursor-pointer text-neutral-400 hover:text-red-600"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                  return (
+                    <div
+                      key={rev.id}
+                      className="flex flex-wrap items-start justify-between gap-4 rounded-xl border bg-white p-4 shadow-xs"
+                      style={{ borderColor: LINE }}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <div className="flex text-amber-500">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <Star
+                                key={i}
+                                size={13}
+                                className={i < rev.rating ? "fill-amber-400 text-amber-400" : "text-neutral-300"}
+                              />
+                            ))}
+                          </div>
+                          {prod && <span className="text-xs font-bold text-[#1F1A17]">{prod}</span>}
+                          {isVerified && (
+                            <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                              Verified Buyer
+                            </span>
+                          )}
+                        </div>
+                        {rev.title && <p className="text-xs font-semibold text-[#1F1A17]">{rev.title}</p>}
+                        {comment && <p className="text-xs text-neutral-600 leading-relaxed">{comment}</p>}
+                        <p className="text-[11px] text-neutral-400">
+                          By {author} {email ? `(${email})` : ""} · {dateStr}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={isUpdating}
+                          onClick={() => handleToggleReviewApproval(rev)}
+                          className={`cursor-pointer rounded-full px-3 py-1 text-xs font-bold transition-opacity ${
+                            isUpdating ? "opacity-60 cursor-not-allowed" : ""
+                          } ${
+                            isApproved ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {isUpdating
+                            ? "Updating..."
+                            : isApproved
+                            ? "Approved / Public"
+                            : "Pending Approval"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isDeleting}
+                          onClick={() => handleDeleteReview(rev)}
+                          className={`cursor-pointer text-neutral-400 hover:text-red-600 transition-opacity p-1 ${
+                            isDeleting ? "opacity-40 cursor-not-allowed" : ""
+                          }`}
+                          title="Delete review"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
