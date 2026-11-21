@@ -216,17 +216,48 @@ const Review = {
     const pool = getPool();
     const numId = Number(id);
     if (!numId || isNaN(numId)) {
-      const err = new Error("Valid review ID is required.");
+      const err = new Error("Valid numeric review ID is required.");
       err.statusCode = 400;
       throw err;
     }
-    const [rows] = await pool.query("SELECT `product_id` FROM `product_reviews` WHERE `id` = ?", [
-      numId,
-    ]);
-    await pool.query("DELETE FROM `product_reviews` WHERE `id` = ?", [numId]);
-    if (rows[0]?.product_id) {
-      await this.syncProductRating(rows[0].product_id);
+
+    // 1. Verify review exists before deletion
+    const [rows] = await pool.query(
+      "SELECT `id`, `product_id`, `images` FROM `product_reviews` WHERE `id` = ?",
+      [numId]
+    );
+
+    if (!rows || rows.length === 0) {
+      const err = new Error(`Review with ID ${numId} not found.`);
+      err.statusCode = 404;
+      throw err;
     }
+
+    const productId = rows[0]?.product_id;
+
+    // 2. Run delete in a transaction
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      await conn.query("DELETE FROM `product_reviews` WHERE `id` = ?", [numId]);
+      await conn.commit();
+    } catch (txErr) {
+      await conn.rollback();
+      throw txErr;
+    } finally {
+      conn.release();
+    }
+
+    // 3. Recalculate product rating & count in its own try/catch so it cannot break the delete
+    if (productId) {
+      try {
+        await this.syncProductRating(productId);
+      } catch (ratingErr) {
+        console.error("Warning: failed to sync product rating after review delete:", ratingErr?.message || ratingErr);
+      }
+    }
+
+    return true;
   },
 };
 

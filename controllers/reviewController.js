@@ -113,14 +113,15 @@ async function adminUpdateReviewApproval(req, res) {
 async function adminDeleteReview(req, res) {
   try {
     const { id } = req.params;
-    if (!id || isNaN(Number(id))) {
-      return res.status(400).json({ error: "Valid review ID is required." });
+    const numId = Number(id);
+    if (!id || isNaN(numId)) {
+      return res.status(400).json({ error: "Valid numeric review ID is required." });
     }
-    await Review.delete(id);
-    return res.json({ message: "Review deleted successfully." });
+    await Review.delete(numId);
+    return res.status(200).json({ success: true, message: "Review deleted successfully." });
   } catch (err) {
-    console.error("adminDeleteReview error:", err);
-    res.status(err.statusCode || 500).json({ error: err.message || "Failed to delete review." });
+    console.error("adminDeleteReview error:", err?.message || err);
+    return res.status(err.statusCode || 500).json({ error: err.message || "Failed to delete review." });
   }
 }
 
