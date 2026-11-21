@@ -93,12 +93,19 @@ async function adminGetReviews(req, res) {
 async function adminUpdateReviewApproval(req, res) {
   try {
     const { id } = req.params;
-    const { isApproved } = req.body;
-    await Review.updateApproval(id, Boolean(isApproved));
-    return res.json({ message: "Review status updated successfully." });
+    if (!id || isNaN(Number(id))) {
+      return res.status(400).json({ error: "Valid review ID is required." });
+    }
+    const isApproved = req.body?.isApproved !== undefined
+      ? Boolean(req.body.isApproved)
+      : req.body?.is_approved !== undefined
+        ? Boolean(req.body.is_approved)
+        : true;
+    await Review.updateApproval(id, isApproved);
+    return res.json({ message: "Review status updated successfully.", isApproved });
   } catch (err) {
     console.error("adminUpdateReviewApproval error:", err);
-    res.status(500).json({ error: "Failed to update review." });
+    res.status(err.statusCode || 500).json({ error: err.message || "Failed to update review." });
   }
 }
 
@@ -106,11 +113,14 @@ async function adminUpdateReviewApproval(req, res) {
 async function adminDeleteReview(req, res) {
   try {
     const { id } = req.params;
+    if (!id || isNaN(Number(id))) {
+      return res.status(400).json({ error: "Valid review ID is required." });
+    }
     await Review.delete(id);
     return res.json({ message: "Review deleted successfully." });
   } catch (err) {
     console.error("adminDeleteReview error:", err);
-    res.status(500).json({ error: "Failed to delete review." });
+    res.status(err.statusCode || 500).json({ error: err.message || "Failed to delete review." });
   }
 }
 

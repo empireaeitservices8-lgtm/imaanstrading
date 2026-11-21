@@ -142,45 +142,89 @@ const Review = {
     );
   },
 
-  async findAllForAdmin({ page = 1, limit = 20 } = {}) {
+  async findAllForAdmin({ page = 1, limit = 50 } = {}) {
     const pool = getPool();
     const offset = Math.max(0, (Number(page) - 1) * Number(limit));
     const [rows] = await pool.query(
       `SELECT r.*, p.name as product_name, p.slug as product_slug, p.image as product_image
        FROM \`product_reviews\` r
-       JOIN \`products\` p ON r.product_id = p.id
+       LEFT JOIN \`products\` p ON r.product_id = p.id
        ORDER BY r.created_at DESC LIMIT ? OFFSET ?`,
       [Number(limit), offset]
     );
 
     const [cnt] = await pool.query("SELECT COUNT(*) as total FROM `product_reviews`");
+    const reviews = rows.map((r) => ({
+      id: r.id,
+      productId: r.product_id,
+      productName: r.product_name || "Product",
+      productSlug: r.product_slug || "",
+      productImage: r.product_image || "",
+      customerName: r.customer_name || "",
+      customerEmail: r.customer_email || "",
+      userName: r.customer_name || "Customer",
+      userEmail: r.customer_email || "",
+      rating: Number(r.rating || 5),
+      title: r.title || "",
+      comment: r.comment || "",
+      reviewText: r.comment || "",
+      images: r.images ? (typeof r.images === "string" ? JSON.parse(r.images) : r.images) : [],
+      isVerifiedPurchase: Boolean(r.is_verified_purchase),
+      isVerifiedBuyer: Boolean(r.is_verified_purchase),
+      isApproved: Boolean(r.is_approved),
+      createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+      updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : new Date().toISOString(),
+      // Backward compatibility keys
+      product_id: r.product_id,
+      product_name: r.product_name || "Product",
+      product_slug: r.product_slug || "",
+      customer_name: r.customer_name || "",
+      customer_email: r.customer_email || "",
+      is_verified_purchase: Boolean(r.is_verified_purchase),
+      is_approved: Boolean(r.is_approved),
+      created_at: r.created_at,
+    }));
+
     return {
-      reviews: rows,
+      reviews,
       total: Number(cnt[0]?.total || 0),
     };
   },
 
   async updateApproval(id, isApproved) {
     const pool = getPool();
+    const numId = Number(id);
+    if (!numId || isNaN(numId)) {
+      const err = new Error("Valid review ID is required.");
+      err.statusCode = 400;
+      throw err;
+    }
     await pool.query("UPDATE `product_reviews` SET `is_approved` = ? WHERE `id` = ?", [
       isApproved ? 1 : 0,
-      Number(id),
+      numId,
     ]);
     const [rows] = await pool.query("SELECT `product_id` FROM `product_reviews` WHERE `id` = ?", [
-      Number(id),
+      numId,
     ]);
-    if (rows[0]) {
+    if (rows[0]?.product_id) {
       await this.syncProductRating(rows[0].product_id);
     }
+    return { id: numId, isApproved: Boolean(isApproved), is_approved: Boolean(isApproved) };
   },
 
   async delete(id) {
     const pool = getPool();
+    const numId = Number(id);
+    if (!numId || isNaN(numId)) {
+      const err = new Error("Valid review ID is required.");
+      err.statusCode = 400;
+      throw err;
+    }
     const [rows] = await pool.query("SELECT `product_id` FROM `product_reviews` WHERE `id` = ?", [
-      Number(id),
+      numId,
     ]);
-    await pool.query("DELETE FROM `product_reviews` WHERE `id` = ?", [Number(id)]);
-    if (rows[0]) {
+    await pool.query("DELETE FROM `product_reviews` WHERE `id` = ?", [numId]);
+    if (rows[0]?.product_id) {
       await this.syncProductRating(rows[0].product_id);
     }
   },
