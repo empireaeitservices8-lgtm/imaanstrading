@@ -146,6 +146,17 @@ app.use("/api/shipping", shippingRoutes);
 // ----- unknown URL -----
 app.use((req, res) => res.status(404).json({ error: "Route not found." }));
 
+// ----- global error handler to always return JSON errors instead of HTML -----
+app.use((err, req, res, next) => {
+  console.error("Unhandled server error:", err?.message || err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  return res.status(err.statusCode || err.status || 500).json({
+    error: err.message || "Internal Server Error",
+  });
+});
+
 // ----- start -----
 const PORT = process.env.PORT || 5001;
 

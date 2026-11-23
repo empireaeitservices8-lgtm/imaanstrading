@@ -1,4 +1,6 @@
-const { getPool } = require("../config/mysql");
+const fs = require("fs");
+const path = require("path");
+const { getPool, UPLOADS_PRODUCTS_DIR } = require("../config/mysql");
 
 const Review = {
   async findByProductId(productId, { page = 1, limit = 10, approvedOnly = true } = {}) {
@@ -234,6 +236,7 @@ const Review = {
     }
 
     const productId = rows[0]?.product_id;
+    const rawImages = rows[0]?.images;
 
     // 2. Run delete in a transaction
     const conn = await pool.getConnection();
@@ -248,7 +251,32 @@ const Review = {
       conn.release();
     }
 
-    // 3. Recalculate product rating & count in its own try/catch so it cannot break the delete
+    // 3. Clean up attached local photos/images if any (missing files must never crash the request)
+    if (rawImages) {
+      try {
+        const imageList = typeof rawImages === "string" ? JSON.parse(rawImages) : rawImages;
+        if (Array.isArray(imageList)) {
+          for (const imgUrl of imageList) {
+            if (typeof imgUrl === "string" && imgUrl.includes("/api/uploads/products/")) {
+              const filename = path.basename(imgUrl);
+              const diskPath = path.join(UPLOADS_PRODUCTS_DIR, filename);
+              try {
+                if (fs.existsSync(diskPath)) {
+                  fs.unlinkSync(diskPath);
+                }
+              } catch (unlinkErr) {
+                // Silently ignore missing files or permission errors
+                console.warn("Notice: could not unlink review photo:", diskPath, unlinkErr?.message);
+              }
+            }
+          }
+        }
+      } catch {
+        // Ignore JSON parse errors
+      }
+    }
+
+    // 4. Recalculate product rating & count in its own try/catch so it cannot break the delete
     if (productId) {
       try {
         await this.syncProductRating(productId);
