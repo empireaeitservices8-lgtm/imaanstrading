@@ -47,10 +47,18 @@ export async function DELETE(
       },
     });
 
-    const data = await res.json().catch(() => ({}));
+    const rawText = await res.text().catch(() => "");
+    let data: Record<string, any> = {};
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      const cleanError = rawText.replace(/<[^>]+>/g, "").trim();
+      data = { error: cleanError && cleanError.length < 200 ? cleanError : "Failed to delete review." };
+    }
+
     if (!res.ok) {
       return NextResponse.json(
-        { error: data.error || "Failed to delete review." },
+        { error: data.error || data.message || "Failed to delete review." },
         { status: res.status }
       );
     }
