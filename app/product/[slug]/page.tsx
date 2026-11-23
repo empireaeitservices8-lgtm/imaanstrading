@@ -446,7 +446,7 @@ function ProductDetailPageInner({
                   <img
                     src={activeImage}
                     alt={product.name}
-                    className="h-full w-full object-contain p-4 transition-opacity duration-200"
+                    className="h-full w-full object-cover object-center transition-opacity duration-200"
                   />
                 ) : (
                   <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-400">
@@ -521,11 +521,11 @@ function ProductDetailPageInner({
                       key={idx}
                       type="button"
                       onClick={() => setActiveImage(img)}
-                      className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border-2 bg-[#FAF7F2] p-1 transition ${
+                      className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border-2 bg-[#FAF7F2] transition ${
                         activeImage === img ? "border-[#7A5A3C] shadow-sm" : "border-neutral-200 hover:border-neutral-400"
                       }`}
                     >
-                      <img src={img} alt="" className="h-full w-full object-contain" />
+                      <img src={img} alt="" className="h-full w-full object-cover object-center" />
                     </button>
                   ))}
                 </div>
@@ -797,7 +797,7 @@ function ProductDetailPageInner({
                           <img
                             src={item.image}
                             alt={item.name}
-                            className={`h-full w-full object-contain p-2 transition-transform duration-300 group-hover:scale-105 ${outOfStock ? "opacity-40" : ""}`}
+                            className={`h-full w-full object-cover object-center transition-transform duration-300 group-hover:scale-105 ${outOfStock ? "opacity-40" : ""}`}
                           />
                         </Link>
 
