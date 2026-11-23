@@ -1465,6 +1465,7 @@ export default function AdminPage() {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [bannerFormOpen, setBannerFormOpen] = useState(false);
   const [bannerImageUploading, setBannerImageUploading] = useState(false);
+  const [isSubmittingBanner, setIsSubmittingBanner] = useState(false);
 
   const [newBanner, setNewBanner] = useState({
     bannerType: "hero_slide",
@@ -4913,26 +4914,36 @@ export default function AdminPage() {
                       alert("Please upload or provide a banner image");
                       return;
                     }
-                    const res = await fetch("/api/admin/banners", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify(newBanner),
-                    });
-                    if (res.ok) {
-                      showNotice("Banner created successfully!");
-                      loadBanners();
-                      setNewBanner({
-                        bannerType: "hero_slide",
-                        title: "",
-                        subtitle: "",
-                        ctaText: "Shop Now",
-                        ctaLink: "/coffee",
-                        imageUrl: "",
-                        colorScheme: "#5A3420",
-                        displayOrder: 1,
-                        isActive: true,
+                    setIsSubmittingBanner(true);
+                    try {
+                      const res = await fetch("/api/admin/banners", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(newBanner),
                       });
-                      setBannerFormOpen(false);
+                      const data = await res.json().catch(() => ({}));
+                      if (res.ok) {
+                        showNotice("Banner created successfully!");
+                        loadBanners();
+                        setNewBanner({
+                          bannerType: "hero_slide",
+                          title: "",
+                          subtitle: "",
+                          ctaText: "Shop Now",
+                          ctaLink: "/coffee",
+                          imageUrl: "",
+                          colorScheme: "#5A3420",
+                          displayOrder: 1,
+                          isActive: true,
+                        });
+                        setBannerFormOpen(false);
+                      } else {
+                        alert(data.error || "Failed to create banner slide. Please try again.");
+                      }
+                    } catch (err: any) {
+                      alert("Network error: " + (err?.message || "Could not connect to server"));
+                    } finally {
+                      setIsSubmittingBanner(false);
                     }
                   }}
                   className="grid grid-cols-1 gap-4 sm:grid-cols-3"
@@ -5071,9 +5082,11 @@ export default function AdminPage() {
                     </button>
                     <button
                       type="submit"
-                      className="cursor-pointer rounded-lg bg-[#7A5A3C] px-5 py-2 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-[#1F1A17]"
+                      disabled={isSubmittingBanner || bannerImageUploading}
+                      className="cursor-pointer rounded-lg bg-[#7A5A3C] px-5 py-2 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-[#1F1A17] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                     >
-                      Add Banner Slide
+                      {isSubmittingBanner && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      {isSubmittingBanner ? "Adding Banner..." : "Add Banner Slide"}
                     </button>
                   </div>
                 </form>
