@@ -645,22 +645,24 @@ function ProductDetailPageInner({
             )}
 
             {/* Quantity Selector + Add to Cart */}
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <div className="flex h-12 w-32 items-center justify-between rounded-xl border border-neutral-300 bg-white px-3">
+            <div className="flex items-center gap-2.5 sm:gap-3">
+              <div className="flex h-12 w-28 sm:w-32 shrink-0 items-center justify-between rounded-xl border border-neutral-300 bg-white px-2.5 sm:px-3 shadow-xs">
                 <button
                   type="button"
                   onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                   disabled={quantity <= 1 || isOutOfStock}
                   className="cursor-pointer text-neutral-500 hover:text-black disabled:opacity-40"
+                  aria-label="Decrease quantity"
                 >
                   <Minus size={16} />
                 </button>
-                <span className="text-sm font-bold">{quantity}</span>
+                <span className="text-sm font-bold text-[#1F1A17]">{quantity}</span>
                 <button
                   type="button"
                   onClick={() => setQuantity((q) => Math.min(currentSize.stock, q + 1))}
                   disabled={quantity >= currentSize.stock || isOutOfStock}
                   className="cursor-pointer text-neutral-500 hover:text-black disabled:opacity-40"
+                  aria-label="Increase quantity"
                 >
                   <Plus size={16} />
                 </button>
@@ -670,10 +672,10 @@ function ProductDetailPageInner({
                 type="button"
                 onClick={handleAddToCart}
                 disabled={isOutOfStock}
-                className="flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#7A5A3C] px-8 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#1F1A17] active:scale-95 disabled:cursor-not-allowed disabled:bg-neutral-300"
+                className="flex h-12 min-h-[48px] flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#7A5A3C] px-4 sm:px-8 text-xs sm:text-sm font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#1F1A17] active:scale-95 disabled:cursor-not-allowed disabled:bg-neutral-300"
               >
-                <ShoppingBag size={16} />
-                <span>{isOutOfStock ? "Sold Out" : "Add to Cart"}</span>
+                <ShoppingBag size={18} className="shrink-0" />
+                <span className="truncate">{isOutOfStock ? "Sold Out" : "Add to Cart"}</span>
               </button>
             </div>
 
