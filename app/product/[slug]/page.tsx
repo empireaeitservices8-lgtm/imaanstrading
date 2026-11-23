@@ -125,9 +125,8 @@ function ProductDetailPageInner({
   } | null>(null);
   const [shippingChecking, setShippingChecking] = useState(false);
 
-  // Recommendations (Frequently Bought Together)
-  const [recommendations, setRecommendations] = useState<ProductDetails[]>([]);
-  const [bundleSelected, setBundleSelected] = useState<Record<string, boolean>>({});
+  // Category & Related Products
+  const [categoryProducts, setCategoryProducts] = useState<ProductDetails[]>([]);
 
   // Reviews
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
@@ -174,21 +173,30 @@ function ProductDetailPageInner({
     };
   }, [slug]);
 
-  // 2. Fetch Recommendations & Reviews
+  // 2. Fetch Category Products & Reviews
   useEffect(() => {
     if (!product) return;
-    // Recommendations
-    fetch(`/api/products/${encodeURIComponent(slug)}/recommendations`)
+    let active = true;
+
+    // Fetch related products in the same category/section
+    const sectionParam = product.section ? `section=${encodeURIComponent(product.section)}` : "";
+    fetch(`/api/products?${sectionParam}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data?.recommendations) {
-          setRecommendations(data.recommendations);
-          const initialMap: Record<string, boolean> = {};
-          data.recommendations.forEach((item: ProductDetails) => {
-            initialMap[String(item.id)] = true;
-          });
-          setBundleSelected(initialMap);
-        }
+        if (!active || !Array.isArray(data?.products)) return;
+        const others: ProductDetails[] = data.products.filter(
+          (p: ProductDetails) => String(p.id) !== String(product.id) && p.slug !== product.slug
+        );
+
+        const targetCategory = (product.category || "").trim().toLowerCase();
+        const sameCategory = others.filter(
+          (p) => targetCategory && (p.category || "").trim().toLowerCase() === targetCategory
+        );
+        const otherCategory = others.filter(
+          (p) => !targetCategory || (p.category || "").trim().toLowerCase() !== targetCategory
+        );
+
+        setCategoryProducts([...sameCategory, ...otherCategory].slice(0, 8));
       })
       .catch(() => {});
 
@@ -196,12 +204,17 @@ function ProductDetailPageInner({
     fetch(`/api/products/${encodeURIComponent(slug)}/reviews`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
+        if (!active) return;
         if (data?.reviews) {
           setReviews(data.reviews);
           setReviewsSummary(data.summary);
         }
       })
       .catch(() => {});
+
+    return () => {
+      active = false;
+    };
   }, [product, slug]);
 
   // Handle Image Zoom Move
@@ -271,27 +284,22 @@ function ProductDetailPageInner({
     setTimeout(() => setAddedToast(false), 3000);
   };
 
-  // Frequently Bought Together: Add All Selected
-  const handleAddBundle = () => {
-    if (!product) return;
-    handleAddToCart();
-    recommendations.forEach((rec) => {
-      if (bundleSelected[String(rec.id)]) {
-        const s = rec.sizes[0] || { label: "Standard", price: 0, stock: 50 };
-        addToCart(
-          {
-            productId: String(rec.id),
-            name: rec.name,
-            size: s.label,
-            price: s.price,
-            mrp: s.mrp,
-            image: rec.image,
-            category: rec.category,
-          },
-          1
-        );
-      }
-    });
+  // Add Related / Category Product to Cart
+  const handleAddRelatedToCart = (item: ProductDetails) => {
+    const s = item.sizes?.[0] || { label: "Standard", price: 0, stock: 50 };
+    if (s.stock <= 0) return;
+    addToCart(
+      {
+        productId: String(item.id),
+        name: item.name,
+        size: s.label,
+        price: s.price,
+        mrp: s.mrp,
+        image: item.image,
+        category: item.category,
+      },
+      1
+    );
     setAddedToast(true);
     setTimeout(() => setAddedToast(false), 3000);
   };
@@ -392,14 +400,6 @@ function ProductDetailPageInner({
   const isWished = checkIsWished(String(product.id));
   const galleryImages = Array.from(new Set([product.image, ...(product.images || [])])).filter(Boolean);
 
-  const bundleTotal =
-    (currentSize?.price || 0) +
-    recommendations.reduce((sum, r) => {
-      if (bundleSelected[String(r.id)]) {
-        return sum + (r.sizes[0]?.price || 0);
-      }
-      return sum;
-    }, 0);
 
   return (
     <div className={`min-h-screen bg-white text-[#1F1A17] ${ubuntu.className}`}>
@@ -755,78 +755,123 @@ function ProductDetailPageInner({
           </div>
         </div>
 
-        {/* FREQUENTLY BOUGHT TOGETHER SECTION */}
-        {recommendations.length > 0 && (
-          <div className="mt-16 rounded-3xl border border-[#E9DCC6] bg-[#FAF7F2] p-6 sm:p-10">
-            <div className="flex items-center gap-2.5">
-              <Sparkles className="h-5 w-5 text-[#7A5A3C]" />
-              <h2 className="text-lg font-bold tracking-tight sm:text-xl">
-                Frequently Bought Together
-              </h2>
+        {/* PRODUCTS IN THIS CATEGORY SECTION */}
+        {categoryProducts.length > 0 && (
+          <section className="mt-16 border-t border-[#E9DCC6] pt-12">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-[#7A5A3C]">
+                  {product.category || product.section || "Collection"}
+                </span>
+                <h2 className="mt-0.5 text-xl font-bold tracking-tight text-[#1F1A17] sm:text-2xl">
+                  More in {product.category || "This Category"}
+                </h2>
+              </div>
+              {product.section && (
+                <Link
+                  href={`/${product.section}`}
+                  className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-[#7A5A3C] transition hover:text-[#1F1A17]"
+                >
+                  <span>View All</span>
+                  <span>→</span>
+                </Link>
+              )}
             </div>
-            <p className="mt-1 text-xs text-neutral-600">
-              Customers who viewed this item also loved these artisanal pairing essentials.
-            </p>
 
-            <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-center">
-              {/* Product cards cluster */}
-              <div className="flex flex-wrap items-center gap-4">
-                {/* Main product */}
-                <div className="flex w-36 flex-col items-center rounded-2xl border border-[#E9DCC6] bg-white p-3 text-center shadow-xs">
-                  <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-neutral-50">
-                    <img src={product.image} alt="" className="h-full w-full object-contain p-1" />
-                  </div>
-                  <span className="mt-2 line-clamp-1 text-xs font-bold">{product.name}</span>
-                  <span className="text-xs font-semibold text-[#7A5A3C]">
-                    {formatPrice(currentSize.price)}
-                  </span>
-                </div>
+            <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
+              {categoryProducts.map((item) => {
+                const s = item.sizes?.[0] || { label: "Standard", price: 0, stock: 50 };
+                const outOfStock = Number(s.stock || 0) <= 0;
+                const discount = s.mrp && s.mrp > s.price ? Math.round((1 - s.price / s.mrp) * 100) : 0;
+                const wished = checkIsWished(String(item.id));
 
-                {recommendations.map((rec) => {
-                  const isChecked = bundleSelected[String(rec.id)] ?? true;
-                  const s = rec.sizes[0] || { label: "Standard", price: 0 };
-                  return (
-                    <div key={rec.id} className="flex items-center gap-4">
-                      <span className="text-lg font-bold text-[#7A5A3C]">+</span>
-                      <div
-                        onClick={() =>
-                          setBundleSelected((prev) => ({
-                            ...prev,
-                            [String(rec.id)]: !isChecked,
-                          }))
-                        }
-                        className={`flex w-36 cursor-pointer flex-col items-center rounded-2xl border p-3 text-center shadow-xs transition ${
-                          isChecked ? "border-[#7A5A3C] bg-white ring-1 ring-[#7A5A3C]" : "border-neutral-200 bg-neutral-100 opacity-60"
-                        }`}
-                      >
-                        <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-neutral-50">
-                          <img src={rec.image} alt="" className="h-full w-full object-contain p-1" />
-                        </div>
-                        <span className="mt-2 line-clamp-1 text-xs font-bold">{rec.name}</span>
-                        <span className="text-xs font-semibold text-[#7A5A3C]">
-                          {formatPrice(s.price)}
+                return (
+                  <article
+                    key={item.id}
+                    className="group flex flex-col justify-between rounded-2xl border border-[#E9DCC6] bg-white p-3 shadow-2xs transition hover:shadow-md"
+                  >
+                    <div>
+                      {/* Image & Wishlist & Badges */}
+                      <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-neutral-50">
+                        <Link href={`/product/${item.slug || item.id}`} className="block h-full w-full">
+                          <img
+                            src={item.image}
+                            alt={item.name}
+                            className={`h-full w-full object-contain p-2 transition-transform duration-300 group-hover:scale-105 ${outOfStock ? "opacity-40" : ""}`}
+                          />
+                        </Link>
+
+                        {(item.badge || item.isMostSelling || item.isBestSeller || discount > 0) && !outOfStock && (
+                          <span className="absolute left-2 top-2 rounded-md bg-[#7A5A3C] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-xs pointer-events-none">
+                            {item.badge || (item.isMostSelling ? "Most Selling" : item.isBestSeller ? "Bestseller" : `${discount}% OFF`)}
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            toggleWishlist({
+                              productId: String(item.id),
+                              name: item.name,
+                              description: item.description,
+                              size: s.label,
+                              price: s.price,
+                              mrp: s.mrp,
+                              image: item.image,
+                              category: item.category,
+                              inStock: !outOfStock,
+                            })
+                          }
+                          aria-label={wished ? "Remove from wishlist" : "Add to wishlist"}
+                          className="absolute right-2 top-2 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-white/90 text-[#B42318] shadow-xs transition hover:bg-white z-10"
+                        >
+                          <Heart className="h-4 w-4" fill={wished ? "#B42318" : "none"} strokeWidth={1.8} />
+                        </button>
+
+                        {outOfStock && (
+                          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded bg-[#B42318] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white shadow-md pointer-events-none">
+                            Out of Stock
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Content */}
+                      <div className="mt-2.5">
+                        <span className="block text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                          {item.category || product.section}
                         </span>
+                        <Link href={`/product/${item.slug || item.id}`}>
+                          <h3 className="mt-0.5 line-clamp-2 min-h-[2.5em] text-xs sm:text-sm font-bold text-[#1F1A17] transition hover:text-[#7A5A3C]">
+                            {item.name}
+                          </h3>
+                        </Link>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
 
-              {/* Bundle summary & Add button */}
-              <div className="flex flex-col gap-2 rounded-2xl border border-[#E9DCC6] bg-white p-5 lg:ml-auto lg:min-w-[260px]">
-                <span className="text-xs font-semibold text-neutral-500">Combo Total Price:</span>
-                <span className="text-2xl font-bold text-[#7A5A3C]">{formatPrice(bundleTotal)}</span>
-                <button
-                  type="button"
-                  onClick={handleAddBundle}
-                  className="mt-2 flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#7A5A3C] py-3 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#1F1A17]"
-                >
-                  <ShoppingBag size={14} />
-                  <span>Add All to Cart</span>
-                </button>
-              </div>
+                    {/* Price & Add to Cart button */}
+                    <div className="mt-3 pt-2 border-t border-neutral-100">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-sm font-bold text-[#7A5A3C]">{formatPrice(s.price)}</span>
+                        {s.mrp && s.mrp > s.price && (
+                          <span className="text-xs text-neutral-400 line-through">{formatPrice(s.mrp)}</span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAddRelatedToCart(item)}
+                        disabled={outOfStock}
+                        className="mt-2.5 flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#FAF7F2] border border-[#E9DCC6] text-[11px] font-bold uppercase tracking-wider text-[#7A5A3C] shadow-xs transition hover:bg-[#7A5A3C] hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <ShoppingBag size={13} />
+                        <span>{outOfStock ? "Sold Out" : "Add to Cart"}</span>
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
-          </div>
+          </section>
         )}
 
         {/* REVIEWS & RATINGS SECTION */}
