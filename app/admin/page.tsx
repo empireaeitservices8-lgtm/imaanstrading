@@ -1462,6 +1462,10 @@ export default function AdminPage() {
   }
   const [banners, setBanners] = useState<AdminBanner[]>([]);
   const [editingBanner, setEditingBanner] = useState<AdminBanner | null>(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [bannerFormOpen, setBannerFormOpen] = useState(false);
+  const [bannerImageUploading, setBannerImageUploading] = useState(false);
+
   const [newBanner, setNewBanner] = useState({
     bannerType: "hero_slide",
     title: "",
@@ -1473,6 +1477,49 @@ export default function AdminPage() {
     displayOrder: 1,
     isActive: true,
   });
+
+  const handleBannerImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file (PNG, JPG, WEBP)");
+      return;
+    }
+    setBannerImageUploading(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new window.Image();
+      img.onload = () => {
+        const MAX_W = 1600;
+        const MAX_H = 800;
+        let w = img.width;
+        let h = img.height;
+        if (w > MAX_W || h > MAX_H) {
+          const ratio = Math.min(MAX_W / w, MAX_H / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.88);
+          setNewBanner((prev) => ({ ...prev, imageUrl: dataUrl }));
+        } else {
+          setNewBanner((prev) => ({ ...prev, imageUrl: String(reader.result) }));
+        }
+        setBannerImageUploading(false);
+      };
+      img.onerror = () => {
+        setNewBanner((prev) => ({ ...prev, imageUrl: String(reader.result) }));
+        setBannerImageUploading(false);
+      };
+      img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Coupons
   interface AdminCoupon {
@@ -2181,13 +2228,12 @@ export default function AdminPage() {
         .filter((o) => o.status !== "cancelled")
         .reduce((sum, o) => sum + (Number(o.total) || 0), 0),
       totalProducts: products.length,
-      lowOrOut: products.filter((p) => isOutOfStock(p) || hasLowStock(p)).length,
-      bestAndMostSelling: products.filter((p) => p.isBestSeller || p.isMostSelling).length,
+      lowOrOut: lowStockItems.length || products.filter((p) => isOutOfStock(p) || hasLowStock(p)).length,
       totalQuotes: quotes.length,
       freshQuotes: quotes.filter((q) => q.status === "new").length,
-      customers: customers.filter((c) => c.role === "customer").length,
+      customers: customers.length,
     }),
-    [orders, products, quotes, customers]
+    [orders, products, quotes, customers, lowStockItems]
   );
 
   const visibleOrders = useMemo(() => {
@@ -2263,26 +2309,44 @@ export default function AdminPage() {
     );
   }, [customers, query]);
 
-  const statCards = [
+  const statCards: Array<{
+    label: string;
+    value: number | string;
+    sub: string;
+    tabTarget: "orders" | "products" | "analytics" | "inventory" | "banners" | "coupons" | "reviews" | "quotes" | "customers";
+    filterAction?: () => void;
+  }> = [
     {
       label: "Total Orders",
       value: stats.totalOrders,
-      sub: `${stats.pendingOrders} pending · ${formatPrice(stats.orderRevenue)} revenue`,
+      sub: `${stats.pendingOrders} pending · ${formatPrice(stats.orderRevenue)} total`,
+      tabTarget: "orders",
+      filterAction: () => setOrderStatusFilter("all"),
+    },
+    {
+      label: "Pending Orders",
+      value: stats.pendingOrders,
+      sub: stats.pendingOrders > 0 ? "Requires packing/dispatch" : "All orders dispatched",
+      tabTarget: "orders",
+      filterAction: () => setOrderStatusFilter("pending"),
     },
     {
       label: "Total Products",
       value: stats.totalProducts,
       sub: `${stats.lowOrOut} low / out of stock`,
+      tabTarget: "inventory",
     },
     {
-      label: "Best & Most Selling",
-      value: stats.bestAndMostSelling,
-      sub: "Tagged as top items",
-    },
-    {
-      label: "Bulk Quotes & Users",
+      label: "Bulk Quotes",
       value: stats.totalQuotes,
-      sub: `${stats.freshQuotes} new quotes · ${stats.customers} customers`,
+      sub: `${stats.freshQuotes} new quotation requests`,
+      tabTarget: "quotes",
+    },
+    {
+      label: "Registered Users",
+      value: customers.length,
+      sub: `${customers.length} total customer accounts`,
+      tabTarget: "customers",
     },
   ];
 
@@ -2383,32 +2447,19 @@ export default function AdminPage() {
 
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold sm:text-xl text-[#1F1A17] tracking-tight">Admin dashboard</h1>
+                <h1 className="text-lg font-bold sm:text-xl text-[#1F1A17] tracking-tight">Imaan&apos;s Admin</h1>
                 <span className="hidden sm:inline-flex items-center rounded-full bg-[#E9DCC6]/60 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#7A5A3C]">
                   Store Control
                 </span>
               </div>
-              {adminName && (
-                <p className="text-xs text-[#1F1A17]/60 hidden sm:block truncate max-w-xs md:max-w-md">
-                  Signed in as <span className="font-medium text-[#1F1A17]">{adminName}</span> ({adminEmail})
-                </p>
-              )}
+              <p className="text-xs text-[#1F1A17]/60 hidden sm:block truncate max-w-xs md:max-w-md">
+                Signed in as <span className="font-medium text-[#1F1A17]">{adminName ? adminName.replace(/ibrew/i, "Imaan's") : "Imaan's Admin"}</span> ({adminEmail.replace("admin@ibrew.com", "imaantrading@gmail.com")})
+              </p>
             </div>
           </div>
 
-          {/* Top Actions: Export CSV, Add Product, Admin Password, View Site, Refresh, Logout */}
-          <div className="flex items-center gap-2 overflow-x-auto py-1">
-            <a
-              href="/api/admin/export/orders"
-              download="imaans_orders.csv"
-              className="hidden sm:flex cursor-pointer items-center gap-1.5 rounded-lg border border-[#1B5E3A] bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#1B5E3A] transition-colors hover:bg-[#1B5E3A] hover:text-white shrink-0"
-              title="Export Orders CSV"
-            >
-              <Download aria-hidden className="h-3.5 w-3.5" />
-              <span className="hidden lg:inline">Export Orders CSV</span>
-              <span className="lg:hidden">Export</span>
-            </a>
-
+          {/* Top Actions: Add Product, View Site, Refresh, Profile Dropdown */}
+          <div className="flex items-center gap-2.5">
             <button
               type="button"
               onClick={() => {
@@ -2422,19 +2473,9 @@ export default function AdminPage() {
               <span className="hidden sm:inline">Add product</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setPasswordModalOpen(true)}
-              className="hidden md:flex cursor-pointer items-center gap-1.5 rounded-lg border border-[#7A5A3C] bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#7A5A3C] transition-colors hover:bg-[#7A5A3C] hover:text-white shrink-0"
-              title="Admin Password"
-            >
-              <KeyRound aria-hidden className="h-3.5 w-3.5" />
-              <span className="hidden xl:inline">Admin Password</span>
-            </button>
-
             <Link
               href="/"
-              className="hidden lg:flex rounded-lg border border-[#7A5A3C] bg-white px-3.5 py-1.5 text-xs font-medium uppercase tracking-widest text-[#7A5A3C] transition-colors hover:bg-[#7A5A3C] hover:text-[#F5EDE0] shrink-0"
+              className="flex rounded-lg border border-[#7A5A3C] bg-white px-3.5 py-1.5 text-xs font-medium uppercase tracking-widest text-[#7A5A3C] transition-colors hover:bg-[#7A5A3C] hover:text-[#F5EDE0] shrink-0 shadow-xs"
               title="View site"
             >
               View site
@@ -2446,30 +2487,83 @@ export default function AdminPage() {
               disabled={loading}
               aria-label="Refresh data"
               title="Refresh data"
-              className="flex h-8.5 w-8.5 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 bg-white text-[#7A5A3C] hover:bg-neutral-100 disabled:opacity-50 shrink-0"
+              className="flex h-8.5 w-8.5 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 bg-white text-[#7A5A3C] hover:bg-neutral-100 disabled:opacity-50 shrink-0 shadow-xs"
             >
               <RefreshCw aria-hidden className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             </button>
 
-            <button
-              type="button"
-              onClick={logout}
-              disabled={isLoggingOut}
-              className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium uppercase tracking-widest text-[#1F1A17] transition-colors hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-75 shrink-0"
-              title="Log out"
-            >
-              {isLoggingOut ? (
+            {/* Profile Dropdown */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setProfileMenuOpen((o) => !o)}
+                className="flex cursor-pointer items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#1F1A17] hover:bg-neutral-50 transition shadow-xs"
+                title="Admin Profile & Options"
+              >
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#7A5A3C] text-[11px] font-bold text-white">
+                  IM
+                </div>
+                <span className="hidden md:inline max-w-[120px] truncate">
+                  {adminName ? adminName.replace(/ibrew/i, "Imaan's") : "Imaan's Admin"}
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 text-neutral-500" />
+              </button>
+
+              {profileMenuOpen && (
                 <>
-                  <Loader2 aria-hidden className="h-4 w-4 animate-spin text-[#7A5A3C]" />
-                  <span className="hidden sm:inline">Logging out...</span>
-                </>
-              ) : (
-                <>
-                  <LogOut aria-hidden className="h-4 w-4" />
-                  <span className="hidden sm:inline">Log out</span>
+                  <div className="fixed inset-0 z-40" onClick={() => setProfileMenuOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1.5 w-56 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl z-50 animate-in fade-in zoom-in-95">
+                    <div className="px-3 py-2 border-b border-neutral-100">
+                      <p className="text-xs font-bold text-[#1F1A17] truncate">
+                        {adminName ? adminName.replace(/ibrew/i, "Imaan's") : "Imaan's Admin"}
+                      </p>
+                      <p className="text-[11px] text-neutral-500 truncate">
+                        {adminEmail.replace("admin@ibrew.com", "imaantrading@gmail.com")}
+                      </p>
+                    </div>
+
+                    <div className="py-1">
+                      <a
+                        href="/api/admin/export/orders"
+                        download="imaans_orders.csv"
+                        onClick={() => setProfileMenuOpen(false)}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-neutral-700 hover:bg-[#FAF7F2] hover:text-[#7A5A3C] transition"
+                      >
+                        <Download className="h-4 w-4 text-[#7A5A3C]" />
+                        <span>Export Orders CSV</span>
+                      </a>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProfileMenuOpen(false);
+                          setPasswordModalOpen(true);
+                        }}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-neutral-700 hover:bg-[#FAF7F2] hover:text-[#7A5A3C] transition"
+                      >
+                        <KeyRound className="h-4 w-4 text-[#7A5A3C]" />
+                        <span>Change Password</span>
+                      </button>
+                    </div>
+
+                    <div className="border-t border-neutral-100 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProfileMenuOpen(false);
+                          logout();
+                        }}
+                        disabled={isLoggingOut}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 transition"
+                      >
+                        <LogOut className="h-4 w-4 text-red-600" />
+                        <span>{isLoggingOut ? "Logging out..." : "Log out"}</span>
+                      </button>
+                    </div>
+                  </div>
                 </>
               )}
-            </button>
+            </div>
           </div>
         </div>
       </header>
@@ -2497,10 +2591,10 @@ export default function AdminPage() {
           <div className="flex h-16 items-center justify-between border-b px-5 bg-white" style={{ borderColor: LINE }}>
             <div className="flex items-center gap-2.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#7A5A3C] text-white font-bold text-sm">
-                IB
+                IM
               </div>
               <div>
-                <p className="font-bold text-sm tracking-tight text-[#1F1A17]">Imaans Store</p>
+                <p className="font-bold text-sm tracking-tight text-[#1F1A17]">Imaan&apos;s Online</p>
                 <p className="text-[11px] text-[#7A5A3C] font-semibold">Admin Panel</p>
               </div>
             </div>
@@ -2604,16 +2698,16 @@ export default function AdminPage() {
                 onClick={() => setSidebarCollapsed(false)}
                 title="Expand sidebar"
               >
-                IB
+                IM
               </div>
             ) : (
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-2.5">
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#7A5A3C] text-white font-bold text-sm shadow-xs">
-                    IB
+                    IM
                   </div>
                   <div className="min-w-0">
-                    <p className="font-bold text-sm tracking-tight text-[#1F1A17] truncate">Imaans Store</p>
+                    <p className="font-bold text-sm tracking-tight text-[#1F1A17] truncate">Imaan&apos;s Online</p>
                     <p className="text-[11px] text-[#7A5A3C] font-semibold uppercase tracking-wider">Control Panel</p>
                   </div>
                 </div>
@@ -2769,18 +2863,28 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* ---------- STATS CARDS ---------- */}
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+            {/* ---------- STATS CARDS (CLICKABLE) ---------- */}
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-5">
               {statCards.map((s) => (
-                <div key={s.label} className="rounded-xl border bg-white p-4 shadow-xs" style={{ borderColor: LINE }}>
-                  <p className="text-xs" style={{ color: MUTED }}>
+                <button
+                  type="button"
+                  key={s.label}
+                  onClick={() => {
+                    setTab(s.tabTarget);
+                    if (s.filterAction) s.filterAction();
+                  }}
+                  className="cursor-pointer text-left rounded-xl border bg-white p-4 shadow-xs transition-all hover:border-[#7A5A3C] hover:shadow-md active:scale-[0.99] group"
+                  style={{ borderColor: LINE }}
+                  title={`View ${s.label}`}
+                >
+                  <p className="text-xs font-semibold text-neutral-500 group-hover:text-[#7A5A3C] transition-colors">
                     {s.label}
                   </p>
-                  <p className="mt-1 text-3xl font-bold tabular-nums">{loading ? "-" : s.value}</p>
-                  <p className="mt-1 text-[11px]" style={{ color: MUTED }}>
+                  <p className="mt-1 text-2xl sm:text-3xl font-bold tabular-nums text-[#1F1A17]">{loading ? "-" : s.value}</p>
+                  <p className="mt-1 text-[11px] text-neutral-500 line-clamp-1">
                     {s.sub}
                   </p>
-                </div>
+                </button>
               ))}
             </div>
 
@@ -2823,35 +2927,41 @@ export default function AdminPage() {
                 </p>
               </div>
 
-              <label
-                className="flex w-full items-center gap-2 rounded-lg border bg-white px-3 focus-within:border-[#7A5A3C] focus-within:ring-1 focus-within:ring-[#7A5A3C] sm:w-80 shadow-xs"
-                style={{ borderColor: LINE }}
-              >
-                <Search aria-hidden className="h-4 w-4 shrink-0" strokeWidth={1.5} style={{ color: MUTED }} />
-                <span className="sr-only">Search</span>
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={
-                    tab === "orders"
-                      ? "Search order ID, customer, phone, item..."
-                      : tab === "products"
-                        ? "Search product, category, tag, size..."
-                        : tab === "quotes"
-                          ? "Search name, email, reference, item..."
-                          : "Search name, email, phone..."
-                  }
-                  className="w-full min-w-0 bg-transparent py-2 text-sm outline-none placeholder:text-[#1F1A17]/40"
-                />
-              </label>
+              {["orders", "products", "inventory", "quotes", "customers", "reviews"].includes(tab) && (
+                <label
+                  className="flex w-full items-center gap-2 rounded-lg border bg-white px-3 focus-within:border-[#7A5A3C] focus-within:ring-1 focus-within:ring-[#7A5A3C] sm:w-80 shadow-xs"
+                  style={{ borderColor: LINE }}
+                >
+                  <Search aria-hidden className="h-4 w-4 shrink-0" strokeWidth={1.5} style={{ color: MUTED }} />
+                  <span className="sr-only">Search</span>
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={
+                      tab === "orders"
+                        ? "Search order ID, customer, phone, item..."
+                        : tab === "products"
+                          ? "Search product, category, tag, size..."
+                          : tab === "inventory"
+                            ? "Search low stock product..."
+                            : tab === "quotes"
+                              ? "Search quote reference, client name, email..."
+                              : tab === "reviews"
+                                ? "Search customer, comment, title..."
+                                : "Search customer name, email, phone..."
+                    }
+                    className="w-full min-w-0 bg-transparent py-2 text-sm outline-none placeholder:text-neutral-500"
+                  />
+                </label>
+              )}
             </div>
 
         {/* ---------- ORDERS MANAGEMENT TAB ---------- */}
         {tab === "orders" && (
           <section className="mt-5 space-y-4" role="tabpanel">
-            {/* Status filter pills */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* Status filter pills & Export CSV */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap gap-1.5">
                 {(["all", ...ORDER_STATUS_OPTIONS.map((o) => o.value)] as const).map((s) => {
                   const on = orderStatusFilter === s;
@@ -2873,6 +2983,16 @@ export default function AdminPage() {
                   );
                 })}
               </div>
+
+              <a
+                href="/api/admin/export/orders"
+                download="imaans_orders.csv"
+                className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-[#1B5E3A] bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#1B5E3A] transition-colors hover:bg-[#1B5E3A] hover:text-white shrink-0 shadow-xs"
+                title="Export Orders CSV"
+              >
+                <Download aria-hidden className="h-3.5 w-3.5" />
+                <span>Export Orders CSV</span>
+              </a>
             </div>
 
             {visibleOrders.length === 0 ? (
@@ -4743,120 +4863,241 @@ export default function AdminPage() {
         {/* ---------- HOMEPAGE BANNERS TAB ---------- */}
         {tab === "banners" && (
           <section className="mt-5 space-y-6" role="tabpanel">
-            <div className="rounded-2xl border bg-white p-6 shadow-xs" style={{ borderColor: LINE }}>
-              <h3 className="text-base font-bold text-[#1F1A17]">Create New Hero Banner / Promo Slide</h3>
-              <form
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  const res = await fetch("/api/admin/banners", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(newBanner),
-                  });
-                  if (res.ok) {
-                    showNotice("Banner created successfully!");
-                    loadBanners();
-                    setNewBanner({
-                      bannerType: "hero_slide",
-                      title: "",
-                      subtitle: "",
-                      ctaText: "Shop Now",
-                      ctaLink: "/coffee",
-                      imageUrl: "",
-                      colorScheme: "#5A3420",
-                      displayOrder: 1,
-                      isActive: true,
-                    });
-                  }
-                }}
-                className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3"
-              >
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700">Headline Title *</label>
-                  <input
-                    type="text"
-                    required
-                    value={newBanner.title}
-                    onChange={(e) => setNewBanner({ ...newBanner, title: e.target.value })}
-                    placeholder="e.g. Estate Fresh Filter Coffee"
-                    className="mt-1 w-full rounded-lg border border-neutral-300 p-2 text-xs outline-none focus:border-[#7A5A3C]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700">Subtitle / Tagline</label>
-                  <input
-                    type="text"
-                    value={newBanner.subtitle}
-                    onChange={(e) => setNewBanner({ ...newBanner, subtitle: e.target.value })}
-                    placeholder="e.g. Freshly roasted in Coorg & shipped daily"
-                    className="mt-1 w-full rounded-lg border border-neutral-300 p-2 text-xs outline-none focus:border-[#7A5A3C]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700">Image URL</label>
-                  <input
-                    type="url"
-                    value={newBanner.imageUrl}
-                    onChange={(e) => setNewBanner({ ...newBanner, imageUrl: e.target.value })}
-                    placeholder="https://..."
-                    className="mt-1 w-full rounded-lg border border-neutral-300 p-2 text-xs outline-none focus:border-[#7A5A3C]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700">CTA Button Text</label>
-                  <input
-                    type="text"
-                    value={newBanner.ctaText}
-                    onChange={(e) => setNewBanner({ ...newBanner, ctaText: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-neutral-300 p-2 text-xs outline-none focus:border-[#7A5A3C]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700">CTA Link</label>
-                  <input
-                    type="text"
-                    value={newBanner.ctaLink}
-                    onChange={(e) => setNewBanner({ ...newBanner, ctaLink: e.target.value })}
-                    placeholder="/coffee"
-                    className="mt-1 w-full rounded-lg border border-neutral-300 p-2 text-xs outline-none focus:border-[#7A5A3C]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700">Theme Color Hex</label>
-                  <input
-                    type="text"
-                    value={newBanner.colorScheme}
-                    onChange={(e) => setNewBanner({ ...newBanner, colorScheme: e.target.value })}
-                    placeholder="#5A3420"
-                    className="mt-1 w-full rounded-lg border border-neutral-300 p-2 text-xs outline-none focus:border-[#7A5A3C]"
-                  />
-                </div>
-                <div className="sm:col-span-3 flex justify-end">
-                  <button
-                    type="submit"
-                    className="cursor-pointer rounded-lg bg-[#7A5A3C] px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-[#1F1A17]"
-                  >
-                    Add Banner Slide
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            {/* Existing Banners */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-[#1F1A17]">Configured Hero Slides ({banners.length})</h3>
-                  <p className="text-xs text-neutral-500">Live preview of your homepage slider cards. Use the Edit button or status toggle to update instantly.</p>
-                </div>
+            {/* Top Bar for Banners: Header & Add Banner Toggle */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white p-5 shadow-xs" style={{ borderColor: LINE }}>
+              <div>
+                <h3 className="text-base font-bold text-[#1F1A17]">Configured Hero Slides ({banners.length})</h3>
+                <p className="text-xs text-neutral-500">Live preview of your homepage slider cards. Use the Edit button or status toggle to update instantly.</p>
+              </div>
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={loadBanners}
-                  className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+                  className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 shadow-xs"
                 >
                   Refresh Slides
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setBannerFormOpen((prev) => !prev)}
+                  className="flex items-center gap-1.5 rounded-lg bg-[#7A5A3C] px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-white shadow-xs hover:bg-[#1F1A17] transition active:scale-95"
+                >
+                  {bannerFormOpen ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  <span>{bannerFormOpen ? "Close Form" : "Add Banner Slide"}</span>
+                </button>
               </div>
+            </div>
+
+            {/* Collapsible / Modal Add Banner Slide Form */}
+            {bannerFormOpen && (
+              <div className="rounded-2xl border-2 border-[#7A5A3C] bg-white p-6 shadow-md animate-in fade-in slide-in-from-top-2">
+                <div className="flex items-center justify-between border-b pb-3 mb-4">
+                  <h3 className="text-base font-bold text-[#1F1A17]">Create New Hero Banner / Promo Slide</h3>
+                  <button
+                    type="button"
+                    onClick={() => setBannerFormOpen(false)}
+                    className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!newBanner.title.trim()) {
+                      alert("Headline Title is required");
+                      return;
+                    }
+                    if (!newBanner.imageUrl) {
+                      alert("Please upload or provide a banner image");
+                      return;
+                    }
+                    const res = await fetch("/api/admin/banners", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(newBanner),
+                    });
+                    if (res.ok) {
+                      showNotice("Banner created successfully!");
+                      loadBanners();
+                      setNewBanner({
+                        bannerType: "hero_slide",
+                        title: "",
+                        subtitle: "",
+                        ctaText: "Shop Now",
+                        ctaLink: "/coffee",
+                        imageUrl: "",
+                        colorScheme: "#5A3420",
+                        displayOrder: 1,
+                        isActive: true,
+                      });
+                      setBannerFormOpen(false);
+                    }
+                  }}
+                  className="grid grid-cols-1 gap-4 sm:grid-cols-3"
+                >
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-700">Headline Title *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newBanner.title}
+                      onChange={(e) => setNewBanner({ ...newBanner, title: e.target.value })}
+                      placeholder="e.g. Estate Fresh Filter Coffee"
+                      className="mt-1 w-full rounded-lg border border-neutral-300 p-2 text-xs outline-none focus:border-[#7A5A3C] placeholder:text-neutral-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-700">Subtitle / Tagline</label>
+                    <input
+                      type="text"
+                      value={newBanner.subtitle}
+                      onChange={(e) => setNewBanner({ ...newBanner, subtitle: e.target.value })}
+                      placeholder="e.g. Freshly roasted in Coorg & shipped daily"
+                      className="mt-1 w-full rounded-lg border border-neutral-300 p-2 text-xs outline-none focus:border-[#7A5A3C] placeholder:text-neutral-500"
+                    />
+                  </div>
+
+                  {/* Banner Image Upload & Live Preview */}
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-700">Banner Image *</label>
+                    {newBanner.imageUrl ? (
+                      <div className="mt-1 flex items-center gap-3">
+                        <div className="relative h-14 w-28 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100">
+                          <img src={newBanner.imageUrl} alt="Banner Preview" className="h-full w-full object-cover" />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="cursor-pointer text-[11px] font-bold text-[#7A5A3C] hover:underline">
+                            Change Image
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleBannerImageUpload}
+                              className="hidden"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setNewBanner((b) => ({ ...b, imageUrl: "" }))}
+                            className="text-[11px] font-semibold text-red-600 hover:underline text-left"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-1 flex flex-col gap-1.5">
+                        <label className="flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 bg-[#FAF7F2] text-xs font-semibold text-[#7A5A3C] hover:border-[#7A5A3C] transition">
+                          <Upload className="h-4 w-4" />
+                          <span>{bannerImageUploading ? "Processing..." : "Upload Image File"}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleBannerImageUpload}
+                            className="hidden"
+                            disabled={bannerImageUploading}
+                          />
+                        </label>
+                        <input
+                          type="url"
+                          placeholder="Or paste image URL (https://...)"
+                          value={newBanner.imageUrl}
+                          onChange={(e) => setNewBanner({ ...newBanner, imageUrl: e.target.value })}
+                          className="w-full rounded-lg border border-neutral-200 px-2.5 py-1 text-[11px] outline-none focus:border-[#7A5A3C] placeholder:text-neutral-500"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-700">CTA Button Text</label>
+                    <input
+                      type="text"
+                      value={newBanner.ctaText}
+                      onChange={(e) => setNewBanner({ ...newBanner, ctaText: e.target.value })}
+                      placeholder="Shop Now"
+                      className="mt-1 w-full rounded-lg border border-neutral-300 p-2 text-xs outline-none focus:border-[#7A5A3C] placeholder:text-neutral-500"
+                    />
+                  </div>
+
+                  {/* CTA Link Dropdown */}
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-700">CTA Link Destination</label>
+                    <select
+                      value={newBanner.ctaLink}
+                      onChange={(e) => setNewBanner({ ...newBanner, ctaLink: e.target.value })}
+                      className="mt-1 w-full rounded-lg border border-neutral-300 bg-white p-2 text-xs outline-none focus:border-[#7A5A3C]"
+                    >
+                      <option value="/coffee">Coffee (/coffee)</option>
+                      <option value="/spices">Spices (/spices)</option>
+                      <option value="/fragrances">Fragrances & Perfumes (/fragrances)</option>
+                      <option value="/importedbed">Imported Beds & Mattresses (/importedbed)</option>
+                      <option value="/dates">Dates & Dry Fruits (/dates)</option>
+                      <option value="/groceries">Groceries (/groceries)</option>
+                      <option value="/coffee-skin">Coffee Skincare (/coffee-skin)</option>
+                    </select>
+                  </div>
+
+                  {/* Theme Color Picker */}
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-700">Theme Color</label>
+                    <div className="mt-1 flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={newBanner.colorScheme || "#5A3420"}
+                        onChange={(e) => setNewBanner({ ...newBanner, colorScheme: e.target.value })}
+                        className="h-8.5 w-10 cursor-pointer rounded border border-neutral-300 p-0.5 bg-white"
+                        title="Pick color"
+                      />
+                      <input
+                        type="text"
+                        value={newBanner.colorScheme}
+                        onChange={(e) => setNewBanner({ ...newBanner, colorScheme: e.target.value })}
+                        placeholder="#5A3420"
+                        className="flex-1 rounded-lg border border-neutral-300 p-2 text-xs font-mono outline-none focus:border-[#7A5A3C] placeholder:text-neutral-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-3 flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setBannerFormOpen(false)}
+                      className="cursor-pointer rounded-lg border border-neutral-300 px-4 py-2 text-xs font-bold text-neutral-600 hover:bg-neutral-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="cursor-pointer rounded-lg bg-[#7A5A3C] px-5 py-2 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-[#1F1A17]"
+                    >
+                      Add Banner Slide
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Existing Banners Section */}
+            <div className="space-y-4">
+              {banners.length === 0 && (
+                <div className="rounded-2xl border bg-white p-12 text-center shadow-xs" style={{ borderColor: LINE }}>
+                  <ImageIcon className="mx-auto h-12 w-12 text-[#7A5A3C]/40" />
+                  <h4 className="mt-3 text-base font-bold text-[#1F1A17]">No Hero Banner Slides Yet</h4>
+                  <p className="mt-1 text-xs text-neutral-500 max-w-sm mx-auto">
+                    Add slides to highlight key product lines, seasonal promotions, or featured collections on the homepage.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setBannerFormOpen(true)}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#7A5A3C] px-4 py-2 text-xs font-bold uppercase tracking-wider text-white shadow-xs hover:bg-[#1F1A17]"
+                  >
+                    <Plus className="h-4 w-4" /> Create First Slide
+                  </button>
+                </div>
+              )}
 
               {editingBanner && (
                 <div className="rounded-2xl border-2 border-[#7A5A3C] bg-[#FAF7F2] p-5 shadow-sm">
