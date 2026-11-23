@@ -2355,9 +2355,9 @@ export default function AdminPage() {
   ];
 
   return (
-    <div className={`${ubuntu.className} min-h-screen flex flex-col`} style={{ background: "#FAF7F2", color: INK }}>
+    <div className={`${ubuntu.className} h-screen h-[100dvh] flex flex-col overflow-hidden`} style={{ background: "#FAF7F2", color: INK }}>
       {/* ---------- TOP HEADER BAR ---------- */}
-      <header className="sticky top-0 z-40 border-b bg-white shadow-xs" style={{ borderColor: LINE }}>
+      <header className="sticky top-0 z-40 border-b bg-white shadow-xs shrink-0" style={{ borderColor: LINE }}>
         <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex items-center gap-3">
             {/* Hamburger button for mobile drawer */}
@@ -2475,7 +2475,7 @@ export default function AdminPage() {
       </header>
 
       {/* ---------- BODY LAYOUT: SIDEBAR + MAIN CONTENT AREA ---------- */}
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className="flex flex-1 overflow-hidden relative min-h-0">
         {/* MOBILE SIDEBAR BACKDROP */}
         {mobileSidebarOpen && (
           <div
@@ -2590,14 +2590,14 @@ export default function AdminPage() {
 
         {/* DESKTOP COLLAPSIBLE SIDEBAR */}
         <aside
-          className={`hidden md:flex flex-col border-r bg-[#FAF7F2] transition-all duration-300 ease-in-out shrink-0 select-none ${
+          className={`hidden md:flex flex-col h-full border-r bg-[#FAF7F2] transition-all duration-300 ease-in-out shrink-0 select-none ${
             sidebarCollapsed ? "w-20" : "w-64"
           }`}
           style={{ borderColor: LINE }}
           aria-label="Desktop Navigation Sidebar"
         >
           {/* Sidebar Top Brand Badge */}
-          <div className="flex h-16 items-center border-b px-4 bg-white" style={{ borderColor: LINE }}>
+          <div className="flex h-16 shrink-0 items-center border-b px-4 bg-white" style={{ borderColor: LINE }}>
             {sidebarCollapsed ? (
               <div
                 className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-[#7A5A3C] text-white font-bold text-sm shadow-xs cursor-pointer"
@@ -2709,7 +2709,7 @@ export default function AdminPage() {
           </div>
 
           {/* Sidebar Collapse Toggle Footer */}
-          <div className="border-t p-3 bg-white" style={{ borderColor: LINE }}>
+          <div className="border-t p-3 bg-white shrink-0" style={{ borderColor: LINE }}>
             {sidebarCollapsed ? (
               <button
                 type="button"
