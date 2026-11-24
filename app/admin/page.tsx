@@ -261,6 +261,21 @@ const totalStock = (p: AdminProduct) => p.sizes.reduce((sum, s) => sum + (Number
 const hasLowStock = (p: AdminProduct) => p.sizes.some((s) => s.stock > 0 && s.stock <= 5);
 const isOutOfStock = (p: AdminProduct) => p.sizes.every((s) => s.stock === 0);
 
+// Converts one row from GET /api/admin/inventory/low-stock (snake_case) into the shape the page uses.
+function toLowStockItem(row: Record<string, unknown>) {
+  return {
+    sizeId: Number(row.size_id),
+    productId: String(row.id),
+    productName: String(row.name),
+    section: String(row.section || ""),
+    sizeLabel: String(row.size_label || ""),
+    stock: Number(row.stock),
+    price: Number(row.price),
+    lowStockThreshold: Number(row.low_stock_threshold ?? 5),
+    image: row.image ? String(row.image) : undefined,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // PRODUCT FORM MODAL (Add / Edit Product, Target Page, Prices, Stock, Images, Tags)
 // ---------------------------------------------------------------------------
@@ -1403,8 +1418,8 @@ export default function AdminPage() {
     fetch("/api/admin/inventory/low-stock")
       .then((res) => (res.ok ? res.json() : null))
       .then((d) => {
-        if (d && Array.isArray(d.alerts)) {
-          setLowStockItems(d.alerts);
+        if (d && Array.isArray(d.items)) {
+          setLowStockItems(d.items.map(toLowStockItem));
         }
       })
       .catch(() => {});
@@ -1670,7 +1685,7 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/inventory/low-stock");
       if (res.ok) {
         const d = await res.json();
-        setLowStockItems(d.alerts || []);
+        setLowStockItems((d.items || []).map(toLowStockItem));
       }
     } catch {} finally {
       setLowStockLoading(false);
