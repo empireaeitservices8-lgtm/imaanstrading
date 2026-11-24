@@ -127,40 +127,61 @@ function Photo({ src, alt, className, eager }: PhotoProps) {
 // ---------------------------------------------------------------------------
 const SLIDE_DELAY_MS = 4000;
 
-const slides = [
-  { title: "Fresh ground coffee, at your door", text: "Filter and instant blends, roasted and packed with care.", cta: "Shop coffee", href: "/coffee", color: "#5A3420", image: IMAGES.heroCoffee },
-  { title: "Export-quality spices", text: "Cardamom, pepper and more, picked for aroma and freshness.", cta: "Shop spices", href: "/spices", color: "#9A5B00", image: IMAGES.heroSpices },
-  { title: "Imported fragrance and oils", text: "Warm, woody and floral fragrances from around the world.", cta: "Shop fragrance", href: "/fragrances", color: "#7B3F6B", image: IMAGES.heroFragrance },
-  { title: "Sleep in luxury", text: "Imported mattresses for better nights.", cta: "Shop mattresses", href: "/importedbed", color: "#34517A", image: IMAGES.heroMattress },
-  { title: "Buying in bulk?", text: "Special prices for shops, hotels, offices and events.", cta: "Get a bulk quote", href: "/bulk-order", color: INK, image: IMAGES.heroBulk },
+type HeroSlide = { title: string; text: string; cta: string; href: string; color: string; image: string };
+
+// Banners from the admin panel have no colour, so the slides cycle through these.
+const SLIDE_COLORS = ["#5A3420", "#9A5B00", "#7B3F6B", "#34517A", INK];
+
+// Shown only if the banner API fails or returns nothing, so the homepage never breaks.
+const FALLBACK_SLIDES: HeroSlide[] = [
+  {
+    title: "Welcome to Imaan's Store",
+    text: "Coffee, spices, fragrance and more, picked with care.",
+    cta: "Shop now",
+    href: "/coffee",
+    color: SLIDE_COLORS[0],
+    image: IMAGES.heroCoffee,
+  },
 ];
+
+type HeroBannerFromApi = {
+  title: string;
+  subtitle: string;
+  image_url: string;
+  cta_text: string;
+  cta_link: string;
+};
+
+// Where the public hero banners are fetched from (NEXT_PUBLIC_API_URL, or the /api proxy).
+function heroBannersUrl() {
+  const base = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
+  return `${base}/api/hero-banners`;
+}
+
+// Converts the banners from the API (already in display_order) into slides.
+function bannersToSlides(banners: HeroBannerFromApi[]): HeroSlide[] {
+  return banners.map((b, i) => ({
+    title: b.title,
+    text: b.subtitle,
+    cta: b.cta_text,
+    href: b.cta_link,
+    color: SLIDE_COLORS[i % SLIDE_COLORS.length],
+    image: b.image_url,
+  }));
+}
 
 function HeroCarousel() {
   const [index, setIndex] = useState(0);
-  const [dynamicSlides, setDynamicSlides] = useState(slides);
+  const [dynamicSlides, setDynamicSlides] = useState<HeroSlide[]>(FALLBACK_SLIDES);
   const touchStartX = useRef<number | null>(null);
 
+  // Loads fresh banners on every visit (no cache) so admin changes show up straight away.
   useEffect(() => {
-    fetch("/api/banners?type=hero_slide")
+    fetch(heroBannersUrl(), { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data?.banners && Array.isArray(data.banners) && data.banners.length > 0) {
-          const fallbackImages = [
-            IMAGES.heroCoffee,
-            IMAGES.heroSpices,
-            IMAGES.heroFragrance,
-            IMAGES.heroMattress,
-            IMAGES.heroBulk,
-          ];
-          const mapped = data.banners.map((b: { title: string; subtitle?: string; ctaText?: string; ctaLink?: string; imageUrl?: string; image?: string; colorScheme?: string }, idx: number) => ({
-            title: b.title,
-            text: b.subtitle || "",
-            cta: b.ctaText || "Shop now",
-            href: b.ctaLink || "/coffee",
-            color: b.colorScheme || "#5A3420",
-            image: b.imageUrl || b.image || fallbackImages[idx % fallbackImages.length],
-          }));
-          setDynamicSlides(mapped);
+        if (Array.isArray(data?.banners) && data.banners.length > 0) {
+          setDynamicSlides(bannersToSlides(data.banners));
         }
       })
       .catch(() => {});
